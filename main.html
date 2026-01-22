@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Navigation Vélo Intelligent</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .gps-info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+        .route-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        .route-info h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚴 Navigation Vélo</h1>
+        
+        <div class="input-group">
+            <label for="destination">📍 Destination</label>
+            <input 
+                type="text" 
+                id="destination" 
+                placeholder="Ex: Tour Eiffel, Paris"
+            >
+        </div>
+        
+        <button id="btnCalculer" onclick="calculerItineraire()">
+            Calculer l'itinéraire
+        </button>
+        
+        <div id="status"></div>
+        <div id="gpsInfo"></div>
+        <div id="routeInfo"></div>
+    </div>
+
+    <script>
+        const API_URL = "https://ton-serveur.onrender.com"; // ⚠️ REMPLACE PAR TON URL RENDER
+        
+        // Fonction pour obtenir la position GPS
+        function obtenirPositionGPS() {
+            return new Promise((resolve, reject) => {
+                if (!navigator.geolocation) {
+                    reject(new Error("La géolocalisation n'est pas supportée par votre appareil"));
+                    return;
+                }
+
+                afficherStatus("📡 Récupération de votre position GPS...", "info");
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        resolve({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            precision: position.coords.accuracy
+                        });
+                    },
+                    (error) => {
+                        let message = "Erreur GPS: ";
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                message += "Vous devez autoriser l'accès à la localisation";
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                message += "Position non disponible";
+                                break;
+                            case error.TIMEOUT:
+                                message += "Délai d'attente dépassé";
+                                break;
+                            default:
+                                message += "Erreur inconnue";
+                        }
+                        reject(new Error(message));
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            });
+        }
+
+        // Fonction principale pour calculer l'itinéraire
+        async function calculerItineraire() {
+            const destinationInput = document.getElementById("destination");
+            const destination = destinationInput.value.trim();
+            const btnCalculer = document.getElementById("btnCalculer");
+
+            if (!destination) {
+                afficherStatus("⚠️ Veuillez entrer une destination", "error");
+                return;
+            }
+
+            btnCalculer.disabled = true;
+            document.getElementById("routeInfo").innerHTML = "";
+
+            try {
+                // 1. Récupérer la position GPS
+                const position = await obtenirPositionGPS();
+                
+                afficherGPSInfo(position);
+                afficherStatus("✅ Position GPS obtenue, calcul de l'itinéraire...", "info");
+
+                // 2. Envoyer la requête au serveur
+                const response = await fetch(`${API_URL}/get_route`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        current_lat: position.latitude,
+                        current_lon: position.longitude,
+                        destination_name: destination
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || "Erreur lors du calcul de l'itinéraire");
+                }
+
+                const itineraire = await response.json();
+                
+                afficherStatus("🎉 Itinéraire calculé avec succès !", "success");
+                afficherItineraire(itineraire);
+
+            } catch (error) {
+                afficherStatus(`❌ ${error.message}`, "error");
+            } finally {
+                btnCalculer.disabled = false;
+            }
+        }
+
+        // Afficher le statut
+        function afficherStatus(message, type) {
+            const statusDiv = document.getElementById("status");
+            statusDiv.innerHTML = message;
+            statusDiv.className = `status ${type}`;
+        }
+
+        // Afficher les infos GPS
+        function afficherGPSInfo(position) {
+            const gpsInfoDiv = document.getElementById("gpsInfo");
+            gpsInfoDiv.className = "gps-info";
+            gpsInfoDiv.innerHTML = `
+                <strong>📍 Votre position:</strong><br>
+                Latitude: ${position.latitude.toFixed(6)}°<br>
+                Longitude: ${position.longitude.toFixed(6)}°<br>
+                Précision: ${Math.round(position.precision)} mètres
+            `;
+        }
+
+        // Afficher l'itinéraire
+        function afficherItineraire(data) {
+            const routeInfoDiv = document.getElementById("routeInfo");
+            routeInfoDiv.className = "route-info";
+            
+            const premierPoint = data.chemin[0];
+            const dernierPoint = data.chemin[data.chemin.length - 1];
+            
+            routeInfoDiv.innerHTML = `
+                <h3>📍 Itinéraire</h3>
+                <p><strong>Départ:</strong> ${premierPoint.lat.toFixed(4)}°, ${premierPoint.lon.toFixed(4)}°</p>
+                <p><strong>Arrivée:</strong> ${dernierPoint.lat.toFixed(4)}°, ${dernierPoint.lon.toFixed(4)}°</p>
+                <p><strong>Points de passage:</strong> ${data.nombre_de_points}</p>
+                <p style="font-size: 12px; color: #666; margin-top: 15px;">
+                    💡 L'itinéraire contient ${data.nombre_de_points} points GPS pour guider votre trajet à vélo électrique
+                </p>
+            `;
+        }
+
+        // Permettre de valider avec Entrée
+        document.getElementById("destination").addEventListener("keypress", function(e) {
+            if (e.key === "Enter") {
+                calculerItineraire();
+            }
+        });
+    </script>
+</body>
+</html>
