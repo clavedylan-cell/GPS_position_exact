@@ -1,1 +1,0 @@
-# GPS_position_exact
